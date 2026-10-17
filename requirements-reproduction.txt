@@ -1,0 +1,10 @@
+# Minimal reconstruction stack. Install the appropriate CPU/CUDA torch separately.
+torch>=2.0
+numpy>=1.24
+scipy>=1.10
+pillow>=9.0
+# Recommended for paper solver / faster rectangle pruning (optional):
+# numba>=0.58
+# pulp>=2.7,<4
+# Without PuLP, the same ILP is solved by scipy.optimize.milp (HiGHS).
+# Reference counter additionally needs pandas; OpenCV has a scipy label fallback.

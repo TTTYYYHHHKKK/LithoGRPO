@@ -1,0 +1,1 @@
+{"stage":"rlft","updates":1000,"batch_size":10,"group_size":6,"lr":0.000002,"noise_level":0.1,"noise_type":"colored","size":512,"shot_backend":"fast"}

@@ -17,8 +17,47 @@ from typing import List, Sequence
 
 import numpy as np
 import torch
-from numba import njit
-from pulp import LpProblem, LpMinimize, LpVariable, lpSum, PULP_CBC_CMD
+try:
+    from numba import njit
+except ImportError:
+    # Same pruning algorithm without JIT; useful for lightweight CPU smoke runs.
+    def njit(function):
+        return function
+try:
+    from pulp import LpProblem, LpMinimize, LpVariable, lpSum, PULP_CBC_CMD, LpStatus
+    HAS_PULP = True
+except ImportError:
+    HAS_PULP = False
+
+
+def _scipy_cover(rectangles, mask, scan_line):
+    """Same binary set-cover ILP via SciPy/HiGHS if PuLP is unavailable."""
+    from scipy.optimize import milp, Bounds, LinearConstraint
+    from scipy.sparse import coo_matrix
+    rows, cols = [], []
+    constraint = 0
+    for y in range(len(mask)):
+        active = [i for i, (r, c, h, w) in enumerate(rectangles) if r <= y < r+h]
+        if scan_line:
+            cuts = sorted({p for i in active for p in (rectangles[i][1],
+                                                        rectangles[i][1]+rectangles[i][3])})
+            points = [x for x in cuts[:-1] if mask[y, x]]
+        else:
+            points = np.flatnonzero(mask[y])
+        for x in points:
+            covering = [i for i in active if rectangles[i][1] <= x < rectangles[i][1]+rectangles[i][3]]
+            if not covering:
+                raise RuntimeError('Foreground pixel has no covering rectangle')
+            rows.extend([constraint]*len(covering))
+            cols.extend(covering)
+            constraint += 1
+    matrix = coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(constraint, len(rectangles))).tocsc()
+    result = milp(np.ones(len(rectangles)), integrality=np.ones(len(rectangles)),
+                  bounds=Bounds(0, 1), constraints=LinearConstraint(matrix, 1, np.inf),
+                  options={'time_limit': 300, 'mip_rel_gap': 0.})
+    if result.status != 0:
+        raise RuntimeError(f'Shot ILP did not prove optimality: {result.message}')
+    return round(result.fun)
 
 REALTYPE = torch.float32
 
@@ -115,10 +154,13 @@ class FastShotCounter:
                 last = c
                 while stack and cur < stack[-1][1]:
                     pos, height = stack.pop()
-                    area_left = stack[-1][0] + 1 if stack else 0
-                    rects.add((r - height + 1, area_left, height, c - area_left))
+                    # pos is the inherited LEFT boundary, not a histogram index.
+                    # Deriving it from the previous stack entry includes zeros in
+                    # shapes such as heights=[2, 1, 2].
+                    rects.add((r - height + 1, pos, height, c - pos))
                     last = pos
-                stack.append((last, cur))
+                if cur > 0 and (not stack or cur > stack[-1][1]):
+                    stack.append((last, cur))
         return list(rects)
 
     def run(self, mask, shape=(512, 512)):
@@ -130,6 +172,9 @@ class FastShotCounter:
         """
         if not isinstance(mask, torch.Tensor):
             mask = torch.tensor(mask, dtype=REALTYPE, device=self._device)
+        if mask.ndim != 2 or not torch.isfinite(mask).all():
+            raise ValueError('mask must be a finite two-dimensional array')
+        mask = (mask >= 0.5).to(dtype=REALTYPE)
         mask = torch.nn.functional.interpolate(
             mask[None, None, :, :], size=shape, mode="nearest")[0, 0]
 
@@ -140,6 +185,12 @@ class FastShotCounter:
 
         R = self.maximal_rectangles(mask)
         R = self.prune_rectangles_numba(R)
+        if not mask.any():
+            return 0
+        if not R:
+            raise RuntimeError('Foreground has no covering rectangles')
+        if not HAS_PULP:
+            return _scipy_cover(R, mask, self.scan_line)
 
         H, W = shape
 
@@ -168,7 +219,7 @@ class FastShotCounter:
                     continue
 
                 cuts = {R[i][1] for i in rects_in_row} | {R[i][1] + R[i][3] for i in rects_in_row}
-                cuts |= {col for (s, e) in row_runs[r] for col in (s, e)}
+                cuts |= {col for (s, e) in row_runs[r] for col in (s, e + 1)}
                 segments = sorted(cuts)
 
                 for a, b in zip(segments, segments[1:]):
@@ -180,5 +231,7 @@ class FastShotCounter:
 
         prob += lpSum(x.values())
         prob.solve(PULP_CBC_CMD(timeLimit=300, msg=False))
+        if LpStatus[prob.status] != 'Optimal' or prob.sol_status != 1:
+            raise RuntimeError(f'Shot ILP did not prove optimality: {LpStatus[prob.status]}')
         answer = [R[i] for i in range(len(R)) if x[i].value() == 1]
         return len(answer)

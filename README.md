@@ -13,6 +13,15 @@
 
 ---
 
+## Local paper-guided reconstruction
+
+The local `lithogrpo/` package independently reconstructs the unreleased flow-matching,
+SFT, GRPO, SOCS optics, reward and inference pipeline. It is not an official release
+of the authors' training code or weights. See [REPRODUCTION.md](REPRODUCTION.md) for
+Chinese instructions, paper-to-code mapping, assumptions and reproduction limits.
+Use `python -m lithogrpo --help` for the CLI, `configs/` for paper hyperparameters,
+and `python tools/smoke.py` for a synthetic CPU pipeline check.
+
 ## TL;DR
 
 **LithoGRPO** is the first framework to unify **flow matching** with **GRPO-based reinforcement learning** for inverse lithography technology (ILT). By treating the physics-based, explicitly-defined ILT objective as a reward signal, LithoGRPO fine-tunes a generative mask synthesizer to produce manufacturable photomasks that are faster and higher-quality than prior optimization-based and learning-based approaches.

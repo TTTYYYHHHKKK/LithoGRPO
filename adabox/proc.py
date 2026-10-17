@@ -89,9 +89,15 @@ def save_rectangle(data_2d_global_arg, rectangle: Rectangle, rectangle_id):
 
 
 def decompose(data_2d_global_arg, n_searches_per_step):
+    # Bound worker count and close processes on success AND exceptions. The
+    # vendored implementation leaked a pool for every connected component.
+    with Pool(processes=n_searches_per_step) as pool:
+        return _decompose_with_pool(data_2d_global_arg, n_searches_per_step, pool)
+
+
+def _decompose_with_pool(data_2d_global_arg, n_searches_per_step, pool):
 
     data_2d_global = data_2d_global_arg.copy()
-    pool = Pool()
     # print('Using ' + str(pool._processes) + ' process(threads) and '
     #       + str(n_searches_per_step) + ' searches per step')
     # Heuristic parameters

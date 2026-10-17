@@ -23,3 +23,8 @@ results/
 checkpoints/
 *.pth
 *.ckpt
+
+# Locally installed LithoBench datasets and optical kernels
+data/
+kernel/
+work/

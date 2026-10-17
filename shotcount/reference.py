@@ -11,7 +11,10 @@ against which the fast counter (`shotcount.fast.FastShotCounter`) is validated.
 
 import numpy as np
 import torch
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 
 from adabox import proc, tools
 
@@ -44,7 +47,12 @@ class ShotCounter:
             mask[None, None, :, :], size=shape, mode="nearest")[0, 0]
         image = image.detach().cpu().numpy().astype(np.uint8)
 
-        comps, labels, stats, centroids = cv2.connectedComponentsWithStats(image)
+        if cv2 is not None:
+            comps, labels, stats, centroids = cv2.connectedComponentsWithStats(image)
+        else:
+            from scipy.ndimage import label as connected_components
+            labels, count = connected_components(image, structure=np.ones((3, 3)))
+            comps = count + 1
         rectangles = []
         for label in range(1, comps):
             ys, xs = np.where(labels == label)

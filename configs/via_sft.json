@@ -1,0 +1,1 @@
+{"stage":"sft","epochs":1,"batch_size":12,"lr":0.00002,"lambda_l2":0.00002,"lambda_pvb":0.00002,"size":512}

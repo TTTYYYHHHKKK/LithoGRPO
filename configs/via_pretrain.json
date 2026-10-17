@@ -1,0 +1,1 @@
+{"stage":"pretrain","epochs":10,"batch_size":12,"lr":0.0001,"size":512,"base_channels":64}
